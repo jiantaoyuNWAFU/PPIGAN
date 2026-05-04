@@ -7,52 +7,23 @@ Generative Adversarial Networks**
 
 ## 📌 Overview
 
-PPIGAN is a GAN-based framework designed for protein-protein interaction (PPI) prediction.  
-It focuses on generating biologically plausible **hard negative samples**, which significantly improves model generalization and robustness.
-
-Unlike traditional approaches that rely on random negative sampling, PPIGAN leverages a **conditional generative adversarial network (CGAN)** to construct more informative negative samples.
+Protein–Protein Interaction (PPI) prediction is highly dependent on the quality of negative samples, while random sampling often leads to unstable performance. To address this issue, PPIGAN employs a conditional generative adversarial network (CGAN) to generate hard and realistic negative samples, enabling the model to learn more discriminative interaction features through adversarial training. Experimental results show that PPIGAN achieves 94.68% and 98.22% accuracy on yeast and human datasets, outperforming or matching state-of-the-art methods.
 
 ---
 
-## 🧠 Motivation
+## Version
 
-Constructing reliable negative samples is a fundamental challenge in PPI prediction:
-
-- ❌ Random negative sampling → introduces noise
-- ❌ Easy negatives → weak supervision signal
-- ❌ Poor generalization across datasets
-
-PPIGAN addresses these issues by:
-
-- ✅ Generating **hard negatives** via Conditional GAN
-- ✅ Aligning generated sequence distribution with real proteins
-- ✅ Improving discrimination ability of PPI models
+1.0
 
 ---
 
-## 🏗️ Framework
+## Authors
 
-PPIGAN is a conditional GAN framework for PPI prediction, designed to generate **biologically plausible hard negative samples**.
+Zhang, Xue and Geng etc.
 
-### 🔹 Generator
-- Takes a protein sequence and noise as input  
-- Generates realistic protein representations  
-- Learns the distribution of real proteins  
+Contact Email: jiantao.yu@nwafu.edu.cn
 
-### 🔹 Discriminator (DeepTrio-based)
-- Takes a pair of protein representations  
-- Predicts interaction probability  
-- Distinguishes real pairs from generated negatives  
-
-### 🔄 Training Strategy
-
-- Train on real positive protein pairs  
-- Generate hard negative samples via the generator  
-- Perform adversarial training between generator and discriminator  
-
-### ✨ Key Idea
-
-Instead of random sampling, PPIGAN generates **hard and realistic negative samples**, improving model generalization.
+Repository URL: https://github.com/jiantaoyuNWAFU/PPIGAN
 
 ---
 
@@ -68,7 +39,7 @@ We use multiple benchmark datasets for evaluation:
     ├── virus-human interaction dataset/
     └── yeast core dataset from PIPR/
 
-> ⚠️ Note: Due to size and licensing restrictions, raw datasets are not included in this repository.
+> ⚠️ Note: Due to the large size of the Biogrid-human dataset, please download it from: [https://pan.nwafu.edu.cn/share/d874a700fa4b4c04a31596782c](https://pan.nwafu.edu.cn/share/d874a700fa4b4c04a31596782c)
 
 ---
 
@@ -79,8 +50,6 @@ git clone https://github.com/jiantaoyuNWAFU/PPIGAN.git
 cd PPIGAN
 pip install -r requirements.txt
 ```
-
----
 
 ## 🚀 Usage
 
@@ -128,5 +97,33 @@ python train_cgan.py \
   --epoch 50 \
   --batch_size 16
 ```
+
+
+
+## 🏗️ Framework
+
+PPIGAN is a conditional GAN framework for PPI prediction, designed to generate **biologically plausible hard negative samples**.
+
+### 🔹 Generator
+- Takes a protein sequence and noise as input  
+- Generates realistic protein representations  
+- Learns the distribution of real proteins  
+
+### 🔹 Discriminator (DeepTrio-based)
+- Takes a pair of protein representations  
+- Predicts interaction probability  
+- Distinguishes real pairs from generated negatives  
+
+### 🔄 Training Strategy
+
+- Train on real positive protein pairs  
+- Generate hard negative samples via the generator  
+- Perform adversarial training between generator and discriminator  
+
+### ✨ Key Idea
+
+Instead of random sampling, PPIGAN generates **hard and realistic negative samples**, improving model generalization.
+
+---
 
 
