@@ -1,6 +1,6 @@
 # PPIGAN
 
-**PPIGAN: ction of Protein-Protein Interactions Using
+**PPIGAN: Prediction of Protein-Protein Interactions Using
 Generative Adversarial Networks**
 
 ---
