@@ -1,6 +1,7 @@
 # PPIGAN
 
-**PPIGAN: Generating biologically plausible hard negative samples for protein-protein interaction prediction using GAN**
+**PPIGAN: ction of Protein-Protein Interactions Using
+Generative Adversarial Networks**
 
 ---
 
