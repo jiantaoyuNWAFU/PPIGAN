@@ -39,7 +39,7 @@ We use multiple benchmark datasets for evaluation:
     ├── virus-human interaction dataset/
     └── yeast core dataset from PIPR/
 
-> ⚠️ Note: Due to the large size of the Biogrid-human dataset, please download it from: [https://pan.nwafu.edu.cn/share/a4f46916db507c9ebb9257d514](https://pan.nwafu.edu.cn/share/a4f46916db507c9ebb9257d514)
+> ⚠️ Note: Due to the large size of the Biogrid-human dataset, please download it from: [https://pan.nwafu.edu.cn/share/06bbc555338f4b00db222f5c9d](https://pan.nwafu.edu.cn/share/06bbc555338f4b00db222f5c9d)
 ---
 
 ## ⚙️ Installation
