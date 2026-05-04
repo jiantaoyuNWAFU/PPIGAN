@@ -129,15 +129,4 @@ python train_cgan.py \
   --batch_size 16
 ```
 
----
 
-## 📌 Citation
-
-```bibtex
-@article{ppigan2026,
-  title={PPIGAN: Prediction of Protein-Protein Interactions Using Generative Adversarial Networks},
-  author={Zhang, Xu and Xue, Songyan and Geng, Jing and Wen, Xiehuizhi and Lai, Lingwei and Huang, Lvwen and Yu, Jiantao},
-  journal={Journal of Computational Biology},
-  year={2026}
-}
-```
