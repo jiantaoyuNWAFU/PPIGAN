@@ -31,40 +31,27 @@ PPIGAN addresses these issues by:
 
 ## 🏗️ Framework
 
-PPIGAN consists of two main components:
+PPIGAN is a conditional GAN framework for PPI prediction, designed to generate **biologically plausible hard negative samples**.
 
 ### 🔹 Generator
-- Takes a protein sequence and random noise as input
-- Generates fake protein representations
-- Learns to mimic real protein distribution
+- Takes a protein sequence and noise as input  
+- Generates realistic protein representations  
+- Learns the distribution of real proteins  
 
 ### 🔹 Discriminator (DeepTrio-based)
-- Predicts whether a protein pair interacts
-- Distinguishes real vs generated samples
+- Takes a pair of protein representations  
+- Predicts interaction probability  
+- Distinguishes real pairs from generated negatives  
 
 ### 🔄 Training Strategy
 
-1. Train discriminator with real positive samples
-2. Generator produces fake protein sequences
-3. Discriminator learns to classify:
-   - real positive pairs
-   - generated negative pairs
-4. Adversarial training improves both components
+- Train on real positive protein pairs  
+- Generate hard negative samples via the generator  
+- Perform adversarial training between generator and discriminator  
 
----
+### ✨ Key Idea
 
-## 📊 Results
-
-| Dataset | Accuracy |
-|--------|--------|
-| Yeast  | 94.68% |
-| Human  | 98.22% |
-
-PPIGAN achieves competitive or superior performance compared to:
-
-- PIPR
-- DeepTrio
-- DeepFE
+Instead of random sampling, PPIGAN generates **hard and realistic negative samples**, improving model generalization.
 
 ---
 
@@ -84,26 +71,81 @@ We use multiple benchmark datasets for evaluation:
 
 ---
 
-## 📁 Data Format
-
-### Interaction file (TSV)
-
-protein_id_1    protein_id_2    label
-
-### Sequence file (TSV)
-
-protein_id    sequence
-
-### Label definition
-
-- 1 → interacting pair  
-- 0 → non-interacting pair  
-
----
-
 ## ⚙️ Installation
 
 ```bash
 git clone https://github.com/jiantaoyuNWAFU/PPIGAN.git
 cd PPIGAN
 pip install -r requirements.txt
+```
+
+---
+
+## 🚀 Usage
+
+### 1. Train PPIGAN
+
+```bash
+python train_cgan.py \
+  --interaction_data "./data/Biogrid-human/third_human_MV_pair.tsv" \
+  --sequence_data "./data/Biogrid-human/double_human_MV_database.tsv" \
+  --epoch 50 \
+  --batch_size 16 \
+  --cuda
+```
+
+### 2. Five-fold cross-validation
+
+```bash
+python train_original_5_fold.py \
+  --interaction_data "./data/yeast core dataset from PIPR/protein.actions.tsv" \
+  --sequence_data "./data/yeast core dataset from PIPR/protein.dictionary.tsv" \
+  --epoch 50 \
+  --batch_size 64 \
+  --cuda
+```
+
+### 3. Independent test
+
+```bash
+python independent_test.py \
+  --interaction_data "./data/virus-human interaction dataset/test_pair.tsv" \
+  --sequence_data "./data/virus-human interaction dataset/test_sequence.tsv" \
+  --d_pth "./checkpoints/D_best.pth" \
+  --batch_size 32 \
+  --cuda
+```
+
+### 4. Run on CPU
+
+If GPU is unavailable, remove `--cuda`:
+
+```bash
+python train_cgan.py \
+  --interaction_data "./data/Biogrid-human/third_human_MV_pair.tsv" \
+  --sequence_data "./data/Biogrid-human/double_human_MV_database.tsv" \
+  --epoch 50 \
+  --batch_size 16
+```
+
+---
+
+## 📊 Results
+
+| Dataset | Accuracy | Precision | Specificity | Recall | F1 | MCC |
+|---|---:|---:|---:|---:|---:|---:|
+| Yeast | 94.68 | 94.99 | 93.33 | 95.69 | 95.34 | 89.14 |
+| Human | 98.22 | 99.08 | 99.11 | 97.31 | 98.19 | 96.46 |
+
+---
+
+## 📌 Citation
+
+```bibtex
+@article{ppigan2026,
+  title={PPIGAN: Prediction of Protein-Protein Interactions Using Generative Adversarial Networks},
+  author={Zhang, Xu and Xue, Songyan and Geng, Jing and Wen, Xiehuizhi and Lai, Lingwei and Huang, Lvwen and Yu, Jiantao},
+  journal={Journal of Computational Biology},
+  year={2026}
+}
+```
