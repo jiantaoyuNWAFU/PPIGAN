@@ -131,15 +131,6 @@ python train_cgan.py \
 
 ---
 
-## 📊 Results
-
-| Dataset | Accuracy | Precision | Specificity | Recall | F1 | MCC |
-|---|---:|---:|---:|---:|---:|---:|
-| Yeast | 94.68 | 94.99 | 93.33 | 95.69 | 95.34 | 89.14 |
-| Human | 98.22 | 99.08 | 99.11 | 97.31 | 98.19 | 96.46 |
-
----
-
 ## 📌 Citation
 
 ```bibtex
