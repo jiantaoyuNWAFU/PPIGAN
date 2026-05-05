@@ -47,7 +47,12 @@ We use multiple benchmark datasets for evaluation:
 ```bash
 git clone https://github.com/jiantaoyuNWAFU/PPIGAN.git
 cd PPIGAN
-pip install -r requirements.txt
+
+conda create -n ppigan python=3.9 -y
+conda activate ppigan
+
+pip install torch torchvision torchaudio
+pip install numpy scikit-learn matplotlib tqdm
 ```
 
 ## 🚀 Usage
