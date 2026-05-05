@@ -11,13 +11,13 @@ Protein–Protein Interaction (PPI) prediction is highly dependent on the qualit
 
 ---
 
-## Version
+## 📦 Version
 
 1.0
 
 ---
 
-## Authors
+## 👨‍🔬 Authors
 
 Zhang, Xue and Geng etc.
 
