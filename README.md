@@ -70,7 +70,7 @@ bash scripts/run_yeast.sh
 After training, results are saved under:
 
 - checkpoints/    Saved model weights (e.g., D_best_acc.pth, G_best_acc.pth)
-- datasets/       Processed train/test datasets
+- datasets/       Cached train/test splits (.pth files)
 - fake_samples/   Generated negative samples (tensor format)
 - fasta_list/     Generated protein sequences (FASTA format)
 - logs/           Training logs
