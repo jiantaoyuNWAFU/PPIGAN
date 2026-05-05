@@ -60,4 +60,10 @@ bash scripts/run_yeast.sh
 
 ---
 
+## ✒️ Citation
+
+If you use PPIGAN in support of your work, please cite:
+
+* Zhang X., Xue S., Geng J., Wen X., Lai L., Huang L., and Yu J.* 2026. PPIGAN: Prediction of Protein-Protein Interactions Using Generative Adversarial Networks. 
+
 
