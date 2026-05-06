@@ -29,7 +29,7 @@ Repository URL: https://github.com/jiantaoyuNWAFU/PPIGAN
 
 ## 📂 Datasets
 
-We use multiple benchmark datasets for evaluation:
+We use multiple datasets for evaluation:
 
 ### Dataset structure
 
