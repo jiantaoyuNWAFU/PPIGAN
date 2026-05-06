@@ -17,15 +17,6 @@ Protein–Protein Interaction (PPI) prediction is highly dependent on the qualit
 
 ---
 
-## 👨‍🔬 Authors
-
-Zhang, Xue and Geng etc.
-
-Contact Email: jiantao.yu@nwafu.edu.cn
-
-Repository URL: https://github.com/jiantaoyuNWAFU/PPIGAN
-
----
 
 ## 📂 Datasets
 
@@ -80,9 +71,12 @@ After training, results are saved under:
 ---
 
 ## ✒️ Citation
-
 If you use PPIGAN in support of your work, please cite:
 
-* Zhang X., Xue S., Geng J., Wen X., Lai L., Huang L., and Yu J.* 2026. PPIGAN: Prediction of Protein-Protein Interactions Using Generative Adversarial Networks. 
+Zhang X.*, Xue S.*, Geng J.*, Wen X., Lai L., Huang L., and Yu J.# 2026. PPIGAN: Prediction of Protein-Protein Interactions Using Generative Adversarial Networks. Journal of Computational Biology (Accepted).
+
+Contact Email: jiantao.yu@nwafu.edu.cn
+Repository URL: https://github.com/jiantaoyuNWAFU/PPIGAN
+
 
 
