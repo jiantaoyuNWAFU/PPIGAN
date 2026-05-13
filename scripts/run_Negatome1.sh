@@ -2,12 +2,12 @@
 
 set -e
 
-INTERACTION_DATA="./data/Negatome/protein.actions.tsv"
-SEQUENCE_DATA="./data/Negatome/protein.dictionary.tsv"
+INTERACTION_DATA="./data/Negatome1/protein.actions.tsv"
+SEQUENCE_DATA="./data/Negatome1/protein.dictionary.tsv"
 
-mkdir -p "./Result/Negatome"
+mkdir -p "./Result/Negatome1"
 
-SAVE_DIR="./Result/Negatome/PPIGAN_$(date +%Y%m%d_%H%M%S)"
+SAVE_DIR="./Result/Negatome1/PPIGAN_$(date +%Y%m%d_%H%M%S)"
 LOG_DIR="$SAVE_DIR/logs"
 
 mkdir -p "$SAVE_DIR"
