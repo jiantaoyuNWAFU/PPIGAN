@@ -1,4 +1,5 @@
 #!/bin/bash
+
 set -e
 
 INTERACTION_DATA="./data/yeast/protein.actions.tsv"
