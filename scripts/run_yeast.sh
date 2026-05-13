@@ -1,21 +1,17 @@
 #!/bin/bash
-
 set -e
 
-# ===== 数据路径 =====
 INTERACTION_DATA="./data/yeast/protein.actions.tsv"
 SEQUENCE_DATA="./data/yeast/protein.dictionary.tsv"
 
 mkdir -p "./fuse_Result/yeast"
 
-# ===== 输出路径 =====
 SAVE_DIR="./Result/yeast/PPIGAN_$(date +%Y%m%d_%H%M%S)"
 LOG_DIR="$SAVE_DIR/logs"
 
 mkdir -p "$SAVE_DIR"
 mkdir -p "$LOG_DIR"
 
-# ===== 训练 =====
 nohup env CUDA_VISIBLE_DEVICES=0 \
 python -u ./run/train.py \
 --cuda \
