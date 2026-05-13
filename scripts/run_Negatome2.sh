@@ -2,20 +2,17 @@
 
 set -e
 
-# ===== 数据路径 =====
 INTERACTION_DATA="./data/Negatome2/protein.actions.tsv"
 SEQUENCE_DATA="./data/Negatome2/protein.dictionary.tsv"
 
-mkdir -p "./fuse_Result/Negatome2"
+mkdir -p "./Result/Negatome2"
 
-# ===== 输出路径 =====
-SAVE_DIR="./fuse_Result/Negatome2/PPIGAN_$(date +%Y%m%d_%H%M%S)"
+SAVE_DIR="./Result/Negatome2/PPIGAN_$(date +%Y%m%d_%H%M%S)"
 LOG_DIR="$SAVE_DIR/logs"
 
 mkdir -p "$SAVE_DIR"
 mkdir -p "$LOG_DIR"
 
-# ===== 训练 =====
 nohup env CUDA_VISIBLE_DEVICES=0 \
 python -u ./run/train.py \
 --cuda \
