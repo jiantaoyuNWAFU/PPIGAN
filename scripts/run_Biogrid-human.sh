@@ -9,7 +9,7 @@ SEQUENCE_DATA="./data/Biogrid-human/protein.dictionary.tsv"
 mkdir -p "./fuse_Result/Biogrid-human"
 
 # ===== 输出路径 =====
-SAVE_DIR="./fuse_Result/Biogrid-human/PPIGAN_$(date +%Y%m%d_%H%M%S)"
+SAVE_DIR="./Result/Biogrid-human/PPIGAN_$(date +%Y%m%d_%H%M%S)"
 LOG_DIR="$SAVE_DIR/logs"
 
 mkdir -p "$SAVE_DIR"
