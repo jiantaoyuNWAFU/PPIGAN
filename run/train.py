@@ -1,13 +1,15 @@
+# -*- coding: utf-8 -*-
 import argparse
 import os
 import random
 import sys
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Tuple
 
 import numpy as np
 import torch
+from torch import nn
 from sklearn.metrics import (
     accuracy_score,
     confusion_matrix,
@@ -16,7 +18,10 @@ from sklearn.metrics import (
     precision_score,
     recall_score,
 )
-from torch import nn
+
+# =============================
+# Project import
+# =============================
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -29,6 +34,10 @@ from Generator import Gen
 from torch_utils import select_device
 
 
+# =============================
+# Basic utilities
+# =============================
+
 def seed_everything(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
@@ -36,9 +45,35 @@ def seed_everything(seed: int) -> None:
     torch.cuda.manual_seed_all(seed)
 
 
+def prepare_output_dirs(save_dir: str) -> Dict[str, str]:
+    dirs = {
+        "root": save_dir,
+        "checkpoints": os.path.join(save_dir, "checkpoints"),
+        "datasets": os.path.join(save_dir, "datasets"),
+        "fake_samples": os.path.join(save_dir, "fake_samples"),
+        "fasta_list": os.path.join(save_dir, "fasta_list"),
+        "logs": os.path.join(save_dir, "logs"),
+    }
+
+    for path in dirs.values():
+        os.makedirs(path, exist_ok=True)
+
+    return dirs
+
+
+def save_checkpoint(model: nn.Module, path: str) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    torch.save(model.state_dict(), path)
+
+
+# =============================
+# Dataset utilities
+# =============================
+
 def split_dataset(dataset, train_ratio: float = 0.8, seed: Optional[int] = None):
     train_size = int(len(dataset) * train_ratio)
     test_size = len(dataset) - train_size
+
     print(f"[Info] dataset split -> train: {train_size}, test: {test_size}")
 
     generator = None
@@ -52,6 +87,46 @@ def split_dataset(dataset, train_ratio: float = 0.8, seed: Optional[int] = None)
         generator=generator,
     )
 
+
+def load_dataset_auto(data_path: str, seq_path: str):
+    if isinstance(data_path, str) and data_path.endswith(".pth") and os.path.exists(data_path):
+        print(f"[Info] loading dataset from pth: {data_path}")
+        return torch.load(data_path)
+
+    print(f"[Info] building dataset from raw files: {data_path}")
+    return MyDataset(data_path, seq_path)
+
+
+def build_loaders(args, output_dirs: Dict[str, str]):
+    if args.train_dataset == "" and args.test_dataset == "":
+        dataset = MyDataset(args.interaction_data, args.sequence_data)
+        train_dataset, test_dataset = split_dataset(dataset, seed=args.seed)
+
+        torch.save(train_dataset, os.path.join(output_dirs["datasets"], "train_dataset.pth"))
+        torch.save(test_dataset, os.path.join(output_dirs["datasets"], "test_dataset.pth"))
+        print("[Info] train/test split saved.")
+    else:
+        train_dataset = load_dataset_auto(args.train_dataset, args.sequence_data)
+        test_dataset = load_dataset_auto(args.test_dataset, args.sequence_data)
+
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+    )
+
+    test_loader = torch.utils.data.DataLoader(
+        test_dataset,
+        batch_size=args.batch_size,
+        shuffle=False,
+    )
+
+    return train_dataset, train_loader, test_loader
+
+
+# =============================
+# Protein degree utilities
+# =============================
 
 def calculate_protein_degree(tsv_path: str):
     degree_dict = defaultdict(int)
@@ -98,6 +173,7 @@ def calculate_protein_degree_from_dataset(dataset):
         y = sample[2]
         pid1 = sample[3]
         pid2 = sample[4]
+
         y_arr = y.detach().cpu().numpy() if isinstance(y, torch.Tensor) else np.asarray(y)
 
         if y_arr.shape[-1] >= 2 and int(y_arr[1]) == 1:
@@ -107,61 +183,52 @@ def calculate_protein_degree_from_dataset(dataset):
     return degree_dict
 
 
-def load_dataset_auto(data_path: str, seq_path: str):
-    if isinstance(data_path, str) and data_path.endswith(".pth") and os.path.exists(data_path):
-        print(f"[Info] loading dataset from pth: {data_path}")
-        return torch.load(data_path)
+def select_s1_s2_by_degree(
+    x1: torch.Tensor,
+    x2: torch.Tensor,
+    y_cls: torch.Tensor,
+    pid1,
+    pid2,
+    protein_degrees,
+) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
+    pos_mask = (y_cls == 1)
 
-    print(f"[Info] building dataset from raw files: {data_path}")
-    return MyDataset(data_path, seq_path)
+    x1_pos = x1[pos_mask]
+    x2_pos = x2[pos_mask]
+
+    pid1_pos = [pid1[idx] for idx, flag in enumerate(pos_mask.tolist()) if flag]
+    pid2_pos = [pid2[idx] for idx, flag in enumerate(pos_mask.tolist()) if flag]
+
+    if x1_pos.size(0) == 0:
+        return None, None
+
+    s1_high_list = []
+    s2_real_list = []
+
+    for idx in range(len(pid1_pos)):
+        d1 = protein_degrees.get(pid1_pos[idx], 0)
+        d2 = protein_degrees.get(pid2_pos[idx], 0)
+
+        if d1 > d2:
+            s1_high_list.append(x1_pos[idx])
+            s2_real_list.append(x2_pos[idx])
+        elif d2 > d1:
+            s1_high_list.append(x2_pos[idx])
+            s2_real_list.append(x1_pos[idx])
+        else:
+            if np.random.rand() < 0.5:
+                s1_high_list.append(x1_pos[idx])
+                s2_real_list.append(x2_pos[idx])
+            else:
+                s1_high_list.append(x2_pos[idx])
+                s2_real_list.append(x1_pos[idx])
+
+    return torch.stack(s1_high_list), torch.stack(s2_real_list)
 
 
-def prepare_output_dirs(save_dir: str):
-    dirs = {
-        "root": save_dir,
-        "checkpoints": os.path.join(save_dir, "checkpoints"),
-        "datasets": os.path.join(save_dir, "datasets"),
-        "fake_samples": os.path.join(save_dir, "fake_samples"),
-        "fasta_list": os.path.join(save_dir, "fasta_list"),
-        "logs": os.path.join(save_dir, "logs"),
-    }
-
-    for path in dirs.values():
-        os.makedirs(path, exist_ok=True)
-
-    return dirs
-
-
-def save_checkpoint(model: nn.Module, path: str) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    torch.save(model.state_dict(), path)
-
-
-def fake_distribution_to_embedding(fake_inputs: torch.Tensor, D: nn.Module) -> torch.Tensor:
-    if fake_inputs.shape[-1] == D.embedding_layer.embedding_dim:
-        return fake_inputs
-
-    return torch.matmul(fake_inputs, D.embedding_layer.weight)
-
-
-def compute_fake_real_stats(fake_inputs: torch.Tensor, left_protein: torch.Tensor, D: nn.Module):
-    with torch.no_grad():
-        real_embed = D.embedding_layer(left_protein.long())
-        fake_embed = fake_distribution_to_embedding(fake_inputs, D)
-
-        fake_flat = fake_embed.reshape(fake_embed.size(0), -1)
-        real_flat = real_embed.reshape(real_embed.size(0), -1)
-
-        cosine = torch.nn.functional.cosine_similarity(fake_flat, real_flat, dim=1)
-        l2 = torch.norm(fake_flat - real_flat, p=2, dim=1)
-
-        return {
-            "cosine_mean": cosine.mean().item(),
-            "cosine_std": cosine.std(unbiased=False).item() if cosine.numel() > 1 else 0.0,
-            "l2_mean": l2.mean().item(),
-            "l2_std": l2.std(unbiased=False).item() if l2.numel() > 1 else 0.0,
-        }
-
+# =============================
+# Amino acid utilities
+# =============================
 
 def build_id_to_token():
     if not hasattr(amino_acids, "amino_acid"):
@@ -171,62 +238,15 @@ def build_id_to_token():
     if not isinstance(aa_dict, dict):
         raise RuntimeError("amino_acids.amino_acid is not a dict")
 
-    id_to_token = {v: str(k) for k, v in aa_dict.items() if isinstance(v, int)}
-    if not id_to_token:
+    id_to_token = {}
+    for k, v in aa_dict.items():
+        if isinstance(v, int):
+            id_to_token[v] = str(k)
+
+    if len(id_to_token) == 0:
         raise RuntimeError("failed to build id_to_token from amino_acids.amino_acid")
 
     return id_to_token
-
-
-def fake_tensor_to_ids_by_nearest_embedding(fake_inputs: torch.Tensor, D: nn.Module):
-    with torch.no_grad():
-        if not hasattr(D, "embedding_layer"):
-            raise RuntimeError("Discriminator has no embedding_layer")
-
-        embed_table = D.embedding_layer.weight.detach().cpu()[1:]
-        x = fake_inputs.detach().cpu()
-
-        if x.shape[-1] != D.embedding_layer.embedding_dim:
-            emb_weight = D.embedding_layer.weight.detach().cpu()
-            x = torch.matmul(x, emb_weight)
-
-        batch_size, seq_len, emb_dim = x.shape
-        x_flat = x.reshape(-1, emb_dim)
-
-        dist = torch.cdist(x_flat, embed_table, p=2)
-        ids = torch.argmin(dist, dim=1) + 1
-
-    return ids.view(batch_size, seq_len)
-
-
-def get_real_aa_freq_from_dataset(train_dataset, num_tokens: int = 21):
-    counts = torch.zeros(num_tokens, dtype=torch.float)
-
-    for sample in train_dataset:
-        x1, x2 = sample[0], sample[1]
-
-        for x in (x1, x2):
-            if not isinstance(x, torch.Tensor):
-                x = torch.tensor(x)
-
-            ids = x.view(-1).long()
-            ids = ids[(ids > 0) & (ids < num_tokens)]
-
-            if ids.numel() > 0:
-                counts += torch.bincount(ids, minlength=num_tokens).float()
-
-    return counts[1:] / counts[1:].sum().clamp_min(1.0)
-
-
-def get_fake_aa_freq(fake_inputs: torch.Tensor, D: nn.Module, num_tokens: int = 21):
-    fake_ids = fake_tensor_to_ids_by_nearest_embedding(fake_inputs, D)
-    fake_ids = fake_ids.view(-1).long()
-    fake_ids = fake_ids[(fake_ids > 0) & (fake_ids < num_tokens)]
-
-    counts = torch.bincount(fake_ids, minlength=num_tokens).float()
-    freq = counts[1:] / counts[1:].sum().clamp_min(1.0)
-
-    return freq.to(fake_inputs.device)
 
 
 def ids_to_seq(ids, id_to_token, remove_zero: bool = True) -> str:
@@ -248,22 +268,87 @@ def ids_to_seq(ids, id_to_token, remove_zero: bool = True) -> str:
     return "".join(seq)
 
 
+def get_real_aa_freq_from_dictionary_tsv(tsv_path: str, device: torch.device):
+    aa_order = list("ACDEFGHIKLMNPQRSTVWY")
+    aa_to_idx = {aa: i for i, aa in enumerate(aa_order)}
+
+    counts = torch.zeros(20, dtype=torch.float)
+
+    with open(tsv_path, "r", encoding="utf-8") as f:
+        for line in f:
+            parts = line.strip().split("\t")
+            if len(parts) < 2:
+                continue
+
+            seq = parts[1].strip()
+            for aa in seq:
+                if aa in aa_to_idx:
+                    counts[aa_to_idx[aa]] += 1
+
+    freq = counts / counts.sum().clamp_min(1.0)
+    return freq.to(device)
+
+
+def logits_to_soft_embedding(fake_logits: torch.Tensor, embedding_layer: nn.Embedding):
+    """
+    fake_logits: [B, L, 21]
+    return:
+        fake_embed: [B, L, em_dim]
+        fake_probs: [B, L, 21]
+    """
+    fake_probs = torch.softmax(fake_logits, dim=-1)
+    embed_table = embedding_layer.weight
+    fake_embed = torch.matmul(fake_probs, embed_table)
+
+    return fake_embed, fake_probs
+
+
+def compute_fake_aa_freq_from_probs(fake_probs: torch.Tensor, condition_protein: torch.Tensor):
+
+    valid_mask = (condition_protein != 0).unsqueeze(-1).float()
+    masked_probs = fake_probs * valid_mask
+
+    aa_sum = masked_probs.sum(dim=(0, 1))
+    fake_aa_freq = aa_sum[1:] / aa_sum[1:].sum().clamp_min(1.0)
+
+    return fake_aa_freq
+
+
+def compute_fake_real_stats(fake_inputs: torch.Tensor, real_target_protein: torch.Tensor, D: nn.Module):
+    with torch.no_grad():
+        real_embed = D.embedding_layer(real_target_protein.long())
+
+        fake_flat = fake_inputs.reshape(fake_inputs.size(0), -1)
+        real_flat = real_embed.reshape(real_embed.size(0), -1)
+
+        cosine = torch.nn.functional.cosine_similarity(fake_flat, real_flat, dim=1)
+        l2 = torch.norm(fake_flat - real_flat, p=2, dim=1)
+
+        return {
+            "cosine_mean": cosine.mean().item(),
+            "cosine_std": cosine.std(unbiased=False).item() if cosine.numel() > 1 else 0.0,
+            "l2_mean": l2.mean().item(),
+            "l2_std": l2.std(unbiased=False).item() if l2.numel() > 1 else 0.0,
+        }
+
+
 def save_fake_samples(
-    output_dirs: dict,
+    output_dirs: Dict[str, str],
     epoch: int,
     step: int,
-    chosen_protein: torch.Tensor,
-    left_protein: torch.Tensor,
+    s1_high: torch.Tensor,
+    s2_real: torch.Tensor,
     fake_inputs: torch.Tensor,
     max_save: int = 8,
 ) -> None:
     n = min(max_save, fake_inputs.size(0))
+
     save_obj = {
         "epoch": epoch,
         "step": step,
-        "chosen_protein": chosen_protein[:n].detach().cpu(),
-        "left_protein": left_protein[:n].detach().cpu(),
-        "fake_inputs": fake_inputs[:n].detach().cpu(),
+        "s1_high_condition": s1_high[:n].detach().cpu(),
+        "s2_real": s2_real[:n].detach().cpu(),
+        "s2_fake_inputs": fake_inputs[:n].detach().cpu(),
     }
 
     torch.save(
@@ -272,37 +357,61 @@ def save_fake_samples(
     )
 
 
-def save_fake_fasta(
-    output_dirs: dict,
+def save_fake_fasta_from_logits(
+    output_dirs: Dict[str, str],
     epoch: int,
     step: int,
-    fake_inputs: torch.Tensor,
-    D: nn.Module,
+    fake_logits: torch.Tensor,
+    condition_protein: torch.Tensor,
     max_save: int = 8,
 ) -> None:
     id_to_token = build_id_to_token()
-    n = min(max_save, fake_inputs.size(0))
-    fake_ids = fake_tensor_to_ids_by_nearest_embedding(fake_inputs[:n], D)
+
+    n = min(max_save, fake_logits.size(0))
+    probs = torch.softmax(fake_logits[:n].detach().cpu(), dim=-1)
+
+    # 禁止采样 padding id=0
+    probs[:, :, 0] = 0.0
+    probs = probs / probs.sum(dim=-1, keepdim=True).clamp_min(1e-8)
+
+    # 不再 argmax，改成 multinomial 采样，避免 L/S 一家独大
+    fake_ids = torch.multinomial(
+        probs.reshape(-1, probs.size(-1)),
+        num_samples=1
+    ).reshape(probs.size(0), probs.size(1))
+
+    valid_mask = (condition_protein[:n].detach().cpu() != 0)
 
     uniq, cnt = torch.unique(fake_ids, return_counts=True)
     print("[Debug] unique decoded ids:", list(zip(uniq.tolist(), cnt.tolist())))
 
-    fasta_path = os.path.join(output_dirs["fasta_list"], f"fake_epoch_{epoch}_step_{step}.fasta")
+    fasta_path = os.path.join(
+        output_dirs["fasta_list"],
+        f"fake_epoch_{epoch}_step_{step}.fasta",
+    )
+
     with open(fasta_path, "w", encoding="utf-8") as f:
         for i in range(fake_ids.size(0)):
-            seq = ids_to_seq(fake_ids[i].tolist(), id_to_token, remove_zero=True)
+            ids = fake_ids[i][valid_mask[i]].tolist()
+            seq = ids_to_seq(ids, id_to_token, remove_zero=True)
+
             if len(seq) == 0:
                 seq = "X"
 
-            f.write(f">fake_epoch_{epoch}_step_{step}_sample{i}\n")
+            f.write(f">fake_S2prime_epoch_{epoch}_step_{step}_sample{i}\n")
             for j in range(0, len(seq), 60):
                 f.write(seq[j:j + 60] + "\n")
 
     print(f"[Saved FASTA] {fasta_path}")
 
 
-def append_fake_stats(output_dirs: dict, epoch: int, step: int, stats: dict) -> None:
+# =============================
+# Logging
+# =============================
+
+def append_fake_stats(output_dirs: Dict[str, str], epoch: int, step: int, stats: dict) -> None:
     log_path = os.path.join(output_dirs["logs"], "fake_similarity_log.txt")
+
     with open(log_path, "a+", encoding="utf-8") as f:
         f.write(
             f"Epoch {epoch}, Step {step}, "
@@ -313,7 +422,7 @@ def append_fake_stats(output_dirs: dict, epoch: int, step: int, stats: dict) -> 
         )
 
 
-def append_epoch_fake_stats(output_dirs: dict, epoch: int, epoch_stats: dict) -> None:
+def append_epoch_fake_stats(output_dirs: Dict[str, str], epoch: int, epoch_stats: dict) -> None:
     if len(epoch_stats["cosine_mean"]) == 0:
         return
 
@@ -323,6 +432,7 @@ def append_epoch_fake_stats(output_dirs: dict, epoch: int, epoch_stats: dict) ->
     l2_std = float(np.mean(epoch_stats["l2_std"]))
 
     log_path = os.path.join(output_dirs["logs"], "fake_similarity_epoch_log.txt")
+
     with open(log_path, "a+", encoding="utf-8") as f:
         f.write(
             f"Epoch {epoch}, "
@@ -339,31 +449,9 @@ def append_epoch_fake_stats(output_dirs: dict, epoch: int, epoch_stats: dict) ->
     )
 
 
-def build_loaders(args, output_dirs: dict):
-    if args.train_dataset == "" and args.test_dataset == "":
-        dataset = MyDataset(args.interaction_data, args.sequence_data)
-        train_dataset, test_dataset = split_dataset(dataset, seed=args.seed)
-
-        torch.save(train_dataset, os.path.join(output_dirs["datasets"], "train_dataset.pth"))
-        torch.save(test_dataset, os.path.join(output_dirs["datasets"], "test_dataset.pth"))
-        print("[Info] train/test split saved.")
-    else:
-        train_dataset = load_dataset_auto(args.train_dataset, args.sequence_data)
-        test_dataset = load_dataset_auto(args.test_dataset, args.sequence_data)
-
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=args.batch_size,
-        shuffle=True,
-    )
-    test_loader = torch.utils.data.DataLoader(
-        test_dataset,
-        batch_size=args.batch_size,
-        shuffle=False,
-    )
-
-    return train_dataset, train_loader, test_loader
-
+# =============================
+# Model
+# =============================
 
 def init_models(args):
     D = Dis(args)
@@ -384,39 +472,136 @@ def init_models(args):
     return D, G
 
 
-def select_positive_pairs(x1, x2, y, pid1, pid2, protein_degrees, device):
-    positive_mask = (y == torch.tensor([0, 1], device=device)).all(dim=1)
+def freeze_discriminator_embedding(D: nn.Module):
+    frozen_embedding_param_ids = set()
 
-    x1_pos = x1[positive_mask]
-    x2_pos = x2[positive_mask]
-    pid1_pos = [pid1[idx] for idx, flag in enumerate(positive_mask.tolist()) if flag]
-    pid2_pos = [pid2[idx] for idx, flag in enumerate(positive_mask.tolist()) if flag]
+    if hasattr(D, "embedding_layer"):
+        for param in D.embedding_layer.parameters():
+            param.requires_grad = False
+            frozen_embedding_param_ids.add(id(param))
+        print("[Info] D.embedding_layer is frozen.")
+    else:
+        print("[Warn] D has no embedding_layer, skip freezing.")
 
-    if x1_pos.size(0) == 0:
-        return None, None
+    return frozen_embedding_param_ids
 
-    chosen_list = []
-    left_list = []
 
-    for idx in range(len(pid1_pos)):
-        d1 = protein_degrees.get(pid1_pos[idx], 0)
-        d2 = protein_degrees.get(pid2_pos[idx], 0)
+def restore_discriminator_trainable_state(D: nn.Module, frozen_embedding_param_ids: set):
+    for param in D.parameters():
+        if id(param) not in frozen_embedding_param_ids:
+            param.requires_grad = True
 
-        if d1 > d2:
-            chosen_list.append(x1_pos[idx])
-            left_list.append(x2_pos[idx])
-        elif d2 > d1:
-            chosen_list.append(x2_pos[idx])
-            left_list.append(x1_pos[idx])
-        elif np.random.rand() < 0.5:
-            chosen_list.append(x1_pos[idx])
-            left_list.append(x2_pos[idx])
+    if hasattr(D, "embedding_layer"):
+        for param in D.embedding_layer.parameters():
+            param.requires_grad = False
+
+
+# =============================
+# Evaluation
+# =============================
+
+def evaluate_and_save(
+    D: nn.Module,
+    G: nn.Module,
+    test_loader,
+    args,
+    output_dirs: Dict[str, str],
+    epoch: int,
+    best_acc: float,
+    best_epoch: int,
+):
+    D.eval()
+
+    with torch.no_grad():
+        y_true = []
+        y_pred = []
+
+        for x1, x2, y, _, _ in test_loader:
+            x1 = x1.to(args.device)
+            x2 = x2.to(args.device)
+            y = y.to(args.device)
+
+            outputs = D(x1, x2, None)
+            outputs = outputs.cpu().numpy()[:, 1]
+
+            y_true_batch = y.cpu().numpy()[:, 1]
+            outputs = (outputs > args.threshold).astype(int)
+
+            y_true.extend(y_true_batch.tolist())
+            y_pred.extend(outputs.tolist())
+
+        cm = confusion_matrix(y_true, y_pred)
+
+        if cm.shape == (2, 2):
+            tn, fp, fn, tp = cm.ravel()
+            specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
         else:
-            chosen_list.append(x2_pos[idx])
-            left_list.append(x1_pos[idx])
+            specificity = 0.0
 
-    return torch.stack(chosen_list), torch.stack(left_list)
+        accuracy = accuracy_score(y_true, y_pred)
+        precision = precision_score(y_true, y_pred, zero_division=0)
+        recall = recall_score(y_true, y_pred, zero_division=0)
+        f1 = f1_score(y_true, y_pred, zero_division=0)
+        mcc = matthews_corrcoef(y_true, y_pred)
 
+        if accuracy > best_acc:
+            best_acc = accuracy
+            best_epoch = epoch + 1
+
+            save_checkpoint(D, os.path.join(output_dirs["checkpoints"], "D_best_acc.pth"))
+            if not args.is_only_dis:
+                save_checkpoint(G, os.path.join(output_dirs["checkpoints"], "G_best_acc.pth"))
+
+            print(f"New best model saved! Best accuracy = {best_acc:.4f} at epoch {best_epoch}")
+
+        if args.is_only_dis:
+            save_checkpoint(
+                D,
+                os.path.join(output_dirs["checkpoints"], f"D_epoch_{epoch + 1}.pth"),
+            )
+        else:
+            save_checkpoint(
+                D,
+                os.path.join(output_dirs["checkpoints"], f"D_epoch_{epoch + 1}_{accuracy:.4f}.pth"),
+            )
+            save_checkpoint(
+                G,
+                os.path.join(output_dirs["checkpoints"], f"G_epoch_{epoch + 1}_{accuracy:.4f}.pth"),
+            )
+            print("Current epoch model saved!")
+
+        print("混淆矩阵:")
+        print(cm)
+        print("准确率:", accuracy)
+        print("精确率:", precision)
+        print("特异性:", specificity)
+        print("召回率:", recall)
+        print("F1值:", f1)
+        print("MCC:", mcc)
+        print(f"Best accuracy so far: {best_acc:.4f}, Best epoch: {best_epoch}")
+        print("===============================================")
+
+        metric_log_path = os.path.join(
+            output_dirs["logs"],
+            f"log_{args.beta_real_loss}_{args.beta_fake_loss}.txt",
+        )
+
+        with open(metric_log_path, "a+", encoding="utf-8") as f:
+            f.write(
+                f"Epoch [{epoch + 1}/{args.epoch}]\n"
+                f"cm:{cm}\n"
+                f"Accuracy: {accuracy}, Precision: {precision}, "
+                f"Specificity: {specificity}, Recall: {recall}, F1: {f1}, MCC:{mcc}\n"
+                f"Best accuracy: {best_acc:.4f}, Best epoch: {best_epoch}\n"
+                "===============================================\n"
+            )
+
+    return best_acc, best_epoch
+
+
+# =============================
+# Training
+# =============================
 
 def train(args):
     output_dirs = prepare_output_dirs(args.save_dir)
@@ -426,12 +611,12 @@ def train(args):
 
     train_dataset, train_loader, test_loader = build_loaders(args, output_dirs)
 
-    real_aa_freq = get_real_aa_freq_from_dataset(train_dataset).to(args.device)
+    real_aa_freq = get_real_aa_freq_from_dictionary_tsv(args.sequence_data, args.device)
     print("[Info] real amino acid frequency loaded.")
     print("[Info] real_aa_freq =", real_aa_freq.detach().cpu().numpy())
 
     D, G = init_models(args)
-    print("[Info] D.embedding_layer is trainable.")
+    frozen_embedding_param_ids = freeze_discriminator_embedding(D)
 
     criterion = nn.CrossEntropyLoss()
     criterion_gen = nn.CrossEntropyLoss()
@@ -442,6 +627,7 @@ def train(args):
         betas=(0.9, 0.999),
         eps=1e-6,
     )
+
     optimizer_G = torch.optim.Adam(
         G.parameters(),
         lr=args.g_lr,
@@ -479,8 +665,12 @@ def train(args):
             x1 = x1.to(args.device)
             x2 = x2.to(args.device)
             y = y.to(args.device)
+
             y_cls = torch.argmax(y, dim=1).long()
 
+            # =============================
+            # 1. Train D on real positive/negative samples
+            # =============================
             optimizer_D.zero_grad()
 
             real_outputs = D(x1, x2, None, return_logits=True)
@@ -489,6 +679,7 @@ def train(args):
             if args.is_only_dis:
                 real_loss.backward()
                 optimizer_D.step()
+
                 print(
                     f"Epoch [{epoch + 1}/{args.epoch}], "
                     f"Step [{i + 1}/{len(train_loader)}], "
@@ -496,45 +687,56 @@ def train(args):
                 )
                 continue
 
-            chosen_protein, left_protein = select_positive_pairs(
+            # =============================
+            # 2. Select S1 and S2 from real positive pairs
+            # =============================
+            s1_high, s2_real = select_s1_s2_by_degree(
                 x1=x1,
                 x2=x2,
-                y=y,
+                y_cls=y_cls,
                 pid1=pid1,
                 pid2=pid2,
                 protein_degrees=protein_degrees,
-                device=args.device,
             )
 
-            if chosen_protein is None:
+            if s1_high is None:
                 real_loss.backward()
                 optimizer_D.step()
                 global_step += 1
                 continue
 
-            batch_pos_size = chosen_protein.size(0)
+            batch_pos_size = s1_high.size(0)
+
             fake_labels = torch.zeros(batch_pos_size, dtype=torch.long, device=args.device)
             real_labels = torch.ones(batch_pos_size, dtype=torch.long, device=args.device)
 
+            # =============================
+            # 3. Paper-aligned fake negative construction
+            #
+            # Generator input: S1 + z
+            # Generator output: S2'
+            # Fake pair: (S1, S2')
+            # =============================
             z = args.noise_scale * torch.randn(
                 (batch_pos_size, 1500, args.em_dim),
                 device=args.device,
             )
 
             with torch.no_grad():
-                fake_inputs = G(left_protein, z)
+                fake_logits = G(s1_high, z)  # S1 + z -> S2'
+                s2_fake_embed, s2_fake_probs = logits_to_soft_embedding(fake_logits, D.embedding_layer)
 
-            fake_outputs = D(chosen_protein, fake_inputs, True, return_logits=True)
+            fake_outputs = D(s1_high, s2_fake_embed, None, return_logits=True)
             fake_loss = criterion(fake_outputs, fake_labels)
 
-            stats = compute_fake_real_stats(fake_inputs, left_protein, D)
+            stats = compute_fake_real_stats(s2_fake_embed, s2_real, D)
             for key in epoch_fake_stats:
                 epoch_fake_stats[key].append(stats[key])
 
             print(
                 f"[FakeStats] Epoch {epoch + 1}, Step {i + 1}, "
-                f"cosine_mean={stats['cosine_mean']:.4f}, "
-                f"l2_mean={stats['l2_mean']:.4f}"
+                f"cosine_fakeS2prime_vs_realS2={stats['cosine_mean']:.4f}, "
+                f"l2={stats['l2_mean']:.4f}"
             )
             append_fake_stats(output_dirs, epoch + 1, i + 1, stats)
 
@@ -543,69 +745,104 @@ def train(args):
                     output_dirs=output_dirs,
                     epoch=epoch + 1,
                     step=i + 1,
-                    chosen_protein=chosen_protein,
-                    left_protein=left_protein,
-                    fake_inputs=fake_inputs,
+                    s1_high=s1_high,
+                    s2_real=s2_real,
+                    fake_inputs=s2_fake_embed,
                     max_save=args.max_save_fake,
                 )
-                save_fake_fasta(
+
+                save_fake_fasta_from_logits(
                     output_dirs=output_dirs,
                     epoch=epoch + 1,
                     step=i + 1,
-                    fake_inputs=fake_inputs,
-                    D=D,
+                    fake_logits=fake_logits,
+                    condition_protein=s1_high,
                     max_save=args.max_save_fake,
                 )
 
             d_loss = args.beta_real_loss * real_loss + args.beta_fake_loss * fake_loss
             d_loss.backward()
             optimizer_D.step()
+
             global_step += 1
 
+            # =============================
+            # 4. Train G
+            #
+            # G tries to make (S1, S2') classified as real positive.
+            # =============================
             last_g_adv_loss = 0.0
             last_g_freq_loss = 0.0
-            last_g_align_loss = 0.0
             last_g_loss = 0.0
 
             for _ in range(args.g_steps):
                 optimizer_G.zero_grad()
 
+                # Freeze D during G update
                 for param in D.parameters():
-                    param.requires_grad = True
+                    param.requires_grad = False
+
                 for param in G.parameters():
                     param.requires_grad = True
 
                 z_g = args.noise_scale * torch.randn(
-                    (left_protein.size(0), 1500, args.em_dim),
+                    (s1_high.size(0), 1500, args.em_dim),
                     device=args.device,
                 )
-                fake_inputs_g = G(left_protein, z_g)
-                fake_outputs_g = D(chosen_protein, fake_inputs_g, True, return_logits=True)
+
+                fake_logits_g = G(s1_high, z_g)  # S1 + z -> S2'
+                s2_fake_embed_g, s2_fake_probs_g = logits_to_soft_embedding(
+                    fake_logits_g,
+                    D.embedding_layer,
+                )
+
+                fake_outputs_g = D(
+                    s1_high,
+                    s2_fake_embed_g,
+                    None,
+                    return_logits=True,
+                )
 
                 g_adv_loss = criterion_gen(fake_outputs_g, real_labels)
-                fake_aa_freq = get_fake_aa_freq(fake_inputs_g, D)
-                g_freq_loss = torch.mean((fake_aa_freq - real_aa_freq) ** 2)
 
-                real_embed_g = D.embedding_layer(left_protein.long()).detach()
-                emb_weight = D.embedding_layer.weight.detach()
-                fake_embed_g = torch.matmul(fake_inputs_g, emb_weight)
-                g_align_loss = torch.mean((fake_embed_g - real_embed_g) ** 2)
+                fake_aa_freq = compute_fake_aa_freq_from_probs(
+                    fake_probs=s2_fake_probs_g,
+                    condition_protein=s1_high,
+                )
 
+                eps = 1e-8
+                g_freq_loss = torch.sum(
+                    fake_aa_freq * torch.log((fake_aa_freq + eps) / (real_aa_freq + eps))
+                )
+
+                entropy = -torch.sum(
+                    s2_fake_probs_g[:, :, 1:] * torch.log(s2_fake_probs_g[:, :, 1:] + 1e-8),
+                    dim=-1
+                )
+
+                valid_mask = (s1_high != 0).float()
+                g_entropy_loss = -torch.sum(entropy * valid_mask) / valid_mask.sum().clamp_min(1.0)
+
+                lambda_freq_now = (
+                    args.lambda_freq
+                    if (epoch + 1) > args.freq_warmup_epochs
+                    else 0.0
+                )
+
+                # g_loss = g_adv_loss + lambda_freq_now * g_freq_loss
                 g_loss = (
                     g_adv_loss
-                    + args.lambda_freq * g_freq_loss
-                    + args.lambda_align * g_align_loss
+                    + lambda_freq_now * g_freq_loss
+                    + args.lambda_entropy * g_entropy_loss
                 )
 
                 g_loss.backward()
                 optimizer_G.step()
 
-                for param in D.parameters():
-                    param.requires_grad = True
+                restore_discriminator_trainable_state(D, frozen_embedding_param_ids)
 
                 last_g_adv_loss = g_adv_loss.item()
                 last_g_freq_loss = g_freq_loss.item()
-                last_g_align_loss = g_align_loss.item()
                 last_g_loss = g_loss.item()
 
             print(
@@ -613,12 +850,12 @@ def train(args):
                 f"Step [{i + 1}/{len(train_loader)}], "
                 f"G_adv: {last_g_adv_loss:.4f}, "
                 f"G_freq: {last_g_freq_loss:.4f}, "
-                f"G_align: {last_g_align_loss:.4f}, "
                 f"G_loss: {last_g_loss:.4f}, "
                 f"D_loss: {d_loss.item():.4f}"
             )
 
         append_epoch_fake_stats(output_dirs, epoch + 1, epoch_fake_stats)
+
         best_acc, best_epoch = evaluate_and_save(
             D=D,
             G=G,
@@ -631,104 +868,40 @@ def train(args):
         )
 
 
-def evaluate_and_save(D, G, test_loader, args, output_dirs, epoch, best_acc, best_epoch):
-    D.eval()
-
-    with torch.no_grad():
-        y_true = []
-        y_pred = []
-
-        for x1, x2, y, _, _ in test_loader:
-            x1 = x1.to(args.device)
-            x2 = x2.to(args.device)
-            y = y.to(args.device)
-
-            outputs = D(x1, x2, None)
-            outputs = outputs.cpu().numpy()[:, 1]
-            y_true_batch = y.cpu().numpy()[:, 1]
-            outputs = (outputs > 0.5).astype(int)
-
-            y_true.extend(y_true_batch.tolist())
-            y_pred.extend(outputs.tolist())
-
-        cm = confusion_matrix(y_true, y_pred)
-
-        if cm.shape == (2, 2):
-            tn, fp, fn, tp = cm.ravel()
-            specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
-        else:
-            specificity = 0.0
-
-        accuracy = accuracy_score(y_true, y_pred)
-        precision = precision_score(y_true, y_pred, zero_division=0)
-        recall = recall_score(y_true, y_pred, zero_division=0)
-        f1 = f1_score(y_true, y_pred, zero_division=0)
-        mcc = matthews_corrcoef(y_true, y_pred)
-
-        if accuracy > best_acc:
-            best_acc = accuracy
-            best_epoch = epoch + 1
-            save_checkpoint(D, os.path.join(output_dirs["checkpoints"], "D_best_acc.pth"))
-            if not args.is_only_dis:
-                save_checkpoint(G, os.path.join(output_dirs["checkpoints"], "G_best_acc.pth"))
-
-            print(f"New best model saved! Best accuracy = {best_acc:.4f} at epoch {best_epoch}")
-
-        if args.is_only_dis:
-            save_checkpoint(D, os.path.join(output_dirs["checkpoints"], f"D_epoch_{epoch + 1}.pth"))
-        else:
-            save_checkpoint(
-                D,
-                os.path.join(output_dirs["checkpoints"], f"D_epoch_{epoch + 1}_{accuracy:.4f}.pth"),
-            )
-            save_checkpoint(
-                G,
-                os.path.join(output_dirs["checkpoints"], f"G_epoch_{epoch + 1}_{accuracy:.4f}.pth"),
-            )
-            print("Current epoch model saved!")
-
-        print("混淆矩阵:")
-        print(cm)
-        print("准确率:", accuracy)
-        print("精确率:", precision)
-        print("特异性:", specificity)
-        print("召回率:", recall)
-        print("F1值:", f1)
-        print("MCC:", mcc)
-        print(f"Best accuracy so far: {best_acc:.4f}, Best epoch: {best_epoch}")
-        print("===============================================")
-
-        metric_log_path = os.path.join(output_dirs["logs"], f"log_{args.beta_real_loss}_{args.beta_fake_loss}.txt")
-        with open(metric_log_path, "a+", encoding="utf-8") as f:
-            f.write(
-                f"Epoch [{epoch + 1}/{args.epoch}]\n"
-                f"cm:{cm}\n"
-                f"Accuracy: {accuracy}, Precision: {precision}, "
-                f"Specificity: {specificity}, Recall: {recall}, F1: {f1}, MCC:{mcc}\n"
-                f"Best accuracy: {best_acc:.4f}, Best epoch: {best_epoch}\n"
-                "===============================================\n"
-            )
-
-    return best_acc, best_epoch
-
+# =============================
+# Args
+# =============================
 
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--interaction_data", default="./data/yeast core dataset from PIPR/protein.actions.tsv", type=str)
-    parser.add_argument("--sequence_data", default="./data/yeast core dataset from PIPR/protein.dictionary.tsv", type=str)
+    # data
+    parser.add_argument(
+        "--interaction_data",
+        default="./data/yeast/protein.actions.tsv",
+        type=str,
+    )
+    parser.add_argument(
+        "--sequence_data",
+        default="./data/yeast/protein.dictionary.tsv",
+        type=str,
+    )
     parser.add_argument("--train_dataset", default="", type=str)
     parser.add_argument("--test_dataset", default="", type=str)
     parser.add_argument("--d_pth", default="", type=str)
-    parser.add_argument("--save_dir", default="./Result/PPIGAN_default", type=str)
+    parser.add_argument("--save_dir", default="./Result/PPIGAN_paper_aligned", type=str)
 
-    parser.add_argument("--epoch", default=50, type=int)
+    # train
+    parser.add_argument("--epoch", default=100, type=int)
     parser.add_argument("--batch_size", default=64, type=int)
     parser.add_argument("--seed", default=42, type=int)
     parser.add_argument("--cuda", action="store_true")
     parser.add_argument("--detect_anomaly", action="store_true")
     parser.add_argument("--is_only_dis", action="store_true")
+    parser.add_argument("--threshold", default=0.5, type=float)
+    parser.add_argument("--lambda_entropy", default=0.01, type=float)
 
+    # model
     parser.add_argument("--em_dim", default=15, type=int)
     parser.add_argument("--hidden_dim", default=25, type=int)
     parser.add_argument("--conv_num", default=10, type=int)
@@ -747,15 +920,19 @@ def parse_args():
     parser.add_argument("--filter_num_1", default=150, type=int)
     parser.add_argument("--filter_num_2", default=175, type=int)
 
+    # optimizer
     parser.add_argument("--d_lr", default=1e-4, type=float)
     parser.add_argument("--g_lr", default=5e-5, type=float)
-    parser.add_argument("--g_steps", default=1, type=int)
 
+    # GAN loss
     parser.add_argument("--beta_real_loss", default=1.0, type=float)
-    parser.add_argument("--beta_fake_loss", default=0.005, type=float)
-    parser.add_argument("--lambda_freq", default=10.0, type=float)
-    parser.add_argument("--lambda_align", default=0.1, type=float)
-    parser.add_argument("--noise_scale", default=0.1, type=float)
+    parser.add_argument("--beta_fake_loss", default=0.05, type=float)
+    parser.add_argument("--lambda_freq", default=5.0, type=float)
+    parser.add_argument("--freq_warmup_epochs", default=5, type=int)
+    parser.add_argument("--g_steps", default=2, type=int)
+    parser.add_argument("--noise_scale", default=1.0, type=float)
+
+    # save
     parser.add_argument("--max_save_fake", default=8, type=int)
 
     return parser.parse_args()
