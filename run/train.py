@@ -19,10 +19,6 @@ from sklearn.metrics import (
     recall_score,
 )
 
-# =============================
-# Project import
-# =============================
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -32,11 +28,6 @@ from dataset import MyDataset
 from Discriminator import Dis
 from Generator import Gen
 from torch_utils import select_device
-
-
-# =============================
-# Basic utilities
-# =============================
 
 def seed_everything(seed: int) -> None:
     random.seed(seed)
@@ -64,11 +55,6 @@ def prepare_output_dirs(save_dir: str) -> Dict[str, str]:
 def save_checkpoint(model: nn.Module, path: str) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     torch.save(model.state_dict(), path)
-
-
-# =============================
-# Dataset utilities
-# =============================
 
 def split_dataset(dataset, train_ratio: float = 0.8, seed: Optional[int] = None):
     train_size = int(len(dataset) * train_ratio)
@@ -122,11 +108,6 @@ def build_loaders(args, output_dirs: Dict[str, str]):
     )
 
     return train_dataset, train_loader, test_loader
-
-
-# =============================
-# Protein degree utilities
-# =============================
 
 def calculate_protein_degree(tsv_path: str):
     degree_dict = defaultdict(int)
@@ -224,11 +205,6 @@ def select_s1_s2_by_degree(
                 s2_real_list.append(x1_pos[idx])
 
     return torch.stack(s1_high_list), torch.stack(s2_real_list)
-
-
-# =============================
-# Amino acid utilities
-# =============================
 
 def build_id_to_token():
     if not hasattr(amino_acids, "amino_acid"):
@@ -404,11 +380,6 @@ def save_fake_fasta_from_logits(
 
     print(f"[Saved FASTA] {fasta_path}")
 
-
-# =============================
-# Logging
-# =============================
-
 def append_fake_stats(output_dirs: Dict[str, str], epoch: int, step: int, stats: dict) -> None:
     log_path = os.path.join(output_dirs["logs"], "fake_similarity_log.txt")
 
@@ -447,11 +418,6 @@ def append_epoch_fake_stats(output_dirs: Dict[str, str], epoch: int, epoch_stats
         f"cosine_mean={cosine_mean:.4f}, "
         f"l2_mean={l2_mean:.4f}"
     )
-
-
-# =============================
-# Model
-# =============================
 
 def init_models(args):
     D = Dis(args)
@@ -494,11 +460,6 @@ def restore_discriminator_trainable_state(D: nn.Module, frozen_embedding_param_i
     if hasattr(D, "embedding_layer"):
         for param in D.embedding_layer.parameters():
             param.requires_grad = False
-
-
-# =============================
-# Evaluation
-# =============================
 
 def evaluate_and_save(
     D: nn.Module,
@@ -570,13 +531,13 @@ def evaluate_and_save(
             )
             print("Current epoch model saved!")
 
-        print("混淆矩阵:")
+        print("Confusion Matrix:")
         print(cm)
-        print("准确率:", accuracy)
-        print("精确率:", precision)
-        print("特异性:", specificity)
-        print("召回率:", recall)
-        print("F1值:", f1)
+        print("Accuracy:", accuracy)
+        print("Precision:", precision)
+        print("Specificity:", specificity)
+        print("Recall:", recall)
+        print("F1 Score:", f1)
         print("MCC:", mcc)
         print(f"Best accuracy so far: {best_acc:.4f}, Best epoch: {best_epoch}")
         print("===============================================")
@@ -597,11 +558,6 @@ def evaluate_and_save(
             )
 
     return best_acc, best_epoch
-
-
-# =============================
-# Training
-# =============================
 
 def train(args):
     output_dirs = prepare_output_dirs(args.save_dir)
@@ -667,10 +623,6 @@ def train(args):
             y = y.to(args.device)
 
             y_cls = torch.argmax(y, dim=1).long()
-
-            # =============================
-            # 1. Train D on real positive/negative samples
-            # =============================
             optimizer_D.zero_grad()
 
             real_outputs = D(x1, x2, None, return_logits=True)
@@ -686,10 +638,6 @@ def train(args):
                     f"D_loss: {real_loss.item():.4f}"
                 )
                 continue
-
-            # =============================
-            # 2. Select S1 and S2 from real positive pairs
-            # =============================
             s1_high, s2_real = select_s1_s2_by_degree(
                 x1=x1,
                 x2=x2,
@@ -710,13 +658,6 @@ def train(args):
             fake_labels = torch.zeros(batch_pos_size, dtype=torch.long, device=args.device)
             real_labels = torch.ones(batch_pos_size, dtype=torch.long, device=args.device)
 
-            # =============================
-            # 3. Paper-aligned fake negative construction
-            #
-            # Generator input: S1 + z
-            # Generator output: S2'
-            # Fake pair: (S1, S2')
-            # =============================
             z = args.noise_scale * torch.randn(
                 (batch_pos_size, 1500, args.em_dim),
                 device=args.device,
@@ -765,12 +706,7 @@ def train(args):
             optimizer_D.step()
 
             global_step += 1
-
-            # =============================
-            # 4. Train G
-            #
-            # G tries to make (S1, S2') classified as real positive.
-            # =============================
+            
             last_g_adv_loss = 0.0
             last_g_freq_loss = 0.0
             last_g_loss = 0.0
@@ -866,11 +802,6 @@ def train(args):
             best_acc=best_acc,
             best_epoch=best_epoch,
         )
-
-
-# =============================
-# Args
-# =============================
 
 def parse_args():
     parser = argparse.ArgumentParser()
