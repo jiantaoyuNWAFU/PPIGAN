@@ -17,18 +17,20 @@ mkdir -p "$LOG_DIR"
 
 # ===== 训练 =====
 nohup env CUDA_VISIBLE_DEVICES=0 \
-python -u ./run/train_fuse.py \
+python -u ./run/train.py \
 --cuda \
 --interaction_data "$INTERACTION_DATA" \
 --sequence_data "$SEQUENCE_DATA" \
 --save_dir "$SAVE_DIR" \
 --batch_size 128 \
---g_steps 2 \
+--g_steps 1 \
 --beta_fake_loss 0.05 \
---lambda_freq 5.0 \
---freq_warmup_epochs 5 \
---noise_scale 1.0 \
+--lambda_freq 20.0 \
+--freq_warmup_epochs 0 \
+--noise_scale 0.5 \
 --seed 42 \
+--lambda_entropy 0.01 \
+--max_save_fake 128 \
 > "$LOG_DIR/train.log" 2>&1 &
 
 echo "Started training"
