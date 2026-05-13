@@ -17,7 +17,7 @@ mkdir -p "$LOG_DIR"
 
 # ===== 训练 =====
 nohup env CUDA_VISIBLE_DEVICES=0 \
-python -u ./run/train_fuse.py \
+python -u ./run/train.py \
 --cuda \
 --interaction_data "$INTERACTION_DATA" \
 --sequence_data "$SEQUENCE_DATA" \
