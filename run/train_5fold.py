@@ -269,12 +269,20 @@ def get_real_aa_freq_from_dictionary_tsv(tsv_path: str, device: torch.device):
     return freq.to(device)
 
 
+# def logits_to_soft_embedding(fake_logits: torch.Tensor, embedding_layer: nn.Embedding):
+#     fake_probs = torch.softmax(fake_logits, dim=-1)
+#     embed_table = embedding_layer.weight
+#     fake_embed = torch.matmul(fake_probs, embed_table)
+#     return fake_embed, fake_probs
+
 def logits_to_soft_embedding(fake_logits: torch.Tensor, embedding_layer: nn.Embedding):
+    max_embedding_idx = embedding_layer.num_embeddings - 1
+    fake_logits = fake_logits[..., : max_embedding_idx + 1] 
+
     fake_probs = torch.softmax(fake_logits, dim=-1)
     embed_table = embedding_layer.weight
     fake_embed = torch.matmul(fake_probs, embed_table)
     return fake_embed, fake_probs
-
 
 def compute_fake_aa_freq_from_probs(fake_probs: torch.Tensor, condition_protein: torch.Tensor):
     valid_mask = (condition_protein != 0).unsqueeze(-1).float()
@@ -340,6 +348,9 @@ def save_fake_fasta_from_logits(
     id_to_token = build_id_to_token()
 
     n = min(max_save, fake_logits.size(0))
+    # fake_logits = fake_logits[..., :2139]
+    max_embedding_idx = fake_logits.size(-1)
+    fake_logits = fake_logits[..., :max_embedding_idx]
     probs = torch.softmax(fake_logits[:n].detach().cpu(), dim=-1)
 
     probs[:, :, 0] = 0.0
@@ -619,6 +630,24 @@ def train_one_fold(args, fold_id, train_dataset, train_loader, test_loader, fold
             x2 = x2.to(args.device)
             y = y.to(args.device)
 
+            emb_n = D.embedding_layer.num_embeddings
+
+            for name, t in [
+                ("x1", x1),
+                ("x2", x2),
+            ]:
+                t_min = int(t.min().item())
+                t_max = int(t.max().item())
+
+                if t_min < 0 or t_max >= emb_n:
+                    print(
+                        f"[BAD INDEX BEFORE D] Fold={fold_id}, Epoch={epoch + 1}, Step={i + 1}, "
+                        f"{name}: min={t_min}, max={t_max}, embedding_size={emb_n}"
+                    )
+                    print("pid1 =", pid1)
+                    print("pid2 =", pid2)
+                    raise RuntimeError("Embedding index out of range before D forward")
+
             y_cls = torch.argmax(y, dim=1).long()
 
             optimizer_D.zero_grad()
@@ -667,6 +696,20 @@ def train_one_fold(args, fold_id, train_dataset, train_loader, test_loader, fold
                     fake_logits,
                     D.embedding_layer,
                 )
+            emb_n = D.embedding_layer.num_embeddings
+            for name, t in [
+                ("s1_high", s1_high),
+                ("s2_real", s2_real),
+            ]:
+                t_min = int(t.min().item())
+                t_max = int(t.max().item())
+
+                if t_min < 0 or t_max >= emb_n:
+                    print(
+                        f"[BAD INDEX] Fold={fold_id}, Epoch={epoch + 1}, Step={i + 1}, "
+                        f"{name}: min={t_min}, max={t_max}, embedding_size={emb_n}"
+                    )
+                    raise RuntimeError("Embedding index out of range")
 
             fake_outputs = D(s1_high, s2_fake_embed, None, return_logits=True)
             fake_loss = criterion(fake_outputs, fake_labels)
@@ -878,7 +921,7 @@ def parse_args():
     parser.add_argument("--n_splits", default=5, type=int)
     parser.add_argument("--epoch", default=300, type=int)
     parser.add_argument("--batch_size", default=64, type=int)
-    parser.add_argument("--num_workers", default=0, type=int)
+    parser.add_argument("--num_workers", default=4, type=int)
     parser.add_argument("--seed", default=42, type=int)
     parser.add_argument("--cuda", action="store_true")
     parser.add_argument("--detect_anomaly", action="store_true")
