@@ -25,12 +25,12 @@ We use multiple datasets for evaluation:
 ### Dataset structure
 
     data/
-    ├── Negatome1/
-    ├── Negatome2/
-    ├── Biogrid-human/
-    ├── human-pipr/
-    ├── virus-human/
-    └── yeast/
+    ├── Negatome1
+    ├── Negatome2
+    ├── Biogrid-human
+    ├── human-pipr
+    ├── virus-human
+    └── yeast
 
 > ⚠️ Note: Due to the large size of the Biogrid-human dataset, please download it from: [https://pan.nwafu.edu.cn/share/06bbc555338f4b00db222f5c9d](https://pan.nwafu.edu.cn/share/06bbc555338f4b00db222f5c9d)
 ---
