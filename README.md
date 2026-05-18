@@ -54,6 +54,12 @@ pip install numpy scikit-learn matplotlib tqdm
 bash scripts/run_yeast.sh 
 ```
 
+### 2. Train PPIGAN_5fold
+
+```
+bash scripts/run_yeast_5fold.sh 
+```
+
 ---
 
 ## 📊 Output
