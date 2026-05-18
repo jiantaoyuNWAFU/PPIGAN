@@ -85,9 +85,9 @@ class Dis(nn.Module):
         masked_a = self._ensure_3d(masked_a)
         masked_a = masked_a.permute(0, 2, 1)
 
-        if is_gen is not None and bool(is_gen):
-            emb_weight = self.embedding_layer.weight  
-            embedded_b = torch.matmul(input_b, emb_weight)  
+        if input_b.dim() == 3:
+            embedded_b = input_b.float()
+
         else:
             embedded_b = self.embedding_layer(input_b.long())
 
