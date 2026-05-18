@@ -14,7 +14,7 @@ mkdir -p "$SAVE_DIR"
 mkdir -p "$LOG_DIR"
 
 nohup env CUDA_VISIBLE_DEVICES=0 \
-python -u ./run/train_fuse_5fold.py \
+python -u ./run/train_5fold.py \
 --cuda \
 --interaction_data "$INTERACTION_DATA" \
 --sequence_data "$SEQUENCE_DATA" \
