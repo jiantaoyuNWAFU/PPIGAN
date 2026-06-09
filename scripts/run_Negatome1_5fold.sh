@@ -40,5 +40,4 @@ python -u ./run/train_5fold.py \
 echo "Started 5-fold training"
 echo "PID: $!"
 echo "SAVE: $SAVE_DIR"
-echo "LOG: $LOG_DIR/train.log"
-echo "SUMMARY: $SAVE_DIR/five_fold_summary.txt"
+echo "LOG: $LOG_DIR/train.log
