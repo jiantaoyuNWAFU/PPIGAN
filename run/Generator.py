@@ -45,36 +45,43 @@ class Gen(nn.Module):
             m.weight.data.normal_(mean, std)
             m.bias.data.zero_()
     
-    def weight_init(self, mean, std):
-        for m in self._modules:
-            self.normal_init(self._modules[m], mean, std)
-
     def forward(self, input_a, input_b):
         input_a = input_a.long()
-        input_b = input_b.long()
+        input_b = input_b.float()
 
         embedded_a = self.embedding(input_a)
-        x = torch.cat([embedded_a, input_b.float()], axis=1)
+
+        x = torch.cat([embedded_a, input_b], dim=1)
+
         x = self.fn(x)
         x_res = [x]
+
         for i in range(self.conv_num):
             cv1d = self.conv1d_list[i * 2]
-            bn_cv = self.conv1d_list[i*2 + 1]
+            bn_cv = self.conv1d_list[i * 2 + 1]
+
             x = cv1d(x)
             x = bn_cv(x)
             x = self.leakyRelu(x)
+
             x_res.append(x)
+
         x = self.conv1d_transpose(x)
         x = self.leakyRelu(x)
+
         for i in range(self.conv_num - 1):
-            ct = self.convtrans_list[i*2]
-            bn_ct = self.convtrans_list[i*2 + 1]
+            ct = self.convtrans_list[i * 2]
+            bn_ct = self.convtrans_list[i * 2 + 1]
+
             x = ct(x + x_res.pop())
             x = bn_ct(x)
             x = self.leakyRelu(x)
+
         x = self.tanh(x + x_res.pop())
         x = self.dense(x)
+
         return x
+   
 class Generator(nn.Module):
     def __init__(self, args):
         super(Generator, self).__init__()
