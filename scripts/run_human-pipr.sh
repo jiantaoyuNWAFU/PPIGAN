@@ -27,8 +27,9 @@ python -u ./run/train.py \
 --g_lr 0.0001 \
 --beta_real_loss 1.0 \
 --beta_fake_loss 0.05 \
---lambda_freq 0.0 \
---noise_scale 1.0 \
+--lambda_freq 10.0 \
+--freq_warmup_epochs 5 \
+--noise_scale 0.3 \
 --val_ratio 0.2 \
 --threshold 0.5 \
 --seed 42 \
